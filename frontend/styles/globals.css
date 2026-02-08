@@ -8,16 +8,24 @@
   box-sizing: border-box;
 }
 
-html, body {
-  height: 100%;
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
   width: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-#__next {
+/* Only apply overflow hidden and fixed height to the whiteboard page, not the landing page */
+body.whiteboard-page {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.whiteboard-page #__next {
   height: 100%;
   width: 100%;
 }
-
