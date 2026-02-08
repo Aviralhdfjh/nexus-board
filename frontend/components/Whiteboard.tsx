@@ -50,6 +50,7 @@ export default function Whiteboard() {
   const [width, setWidth] = useState(2);
   const [opacity, setOpacity] = useState(1);
   const [style, setStyle] = useState<StrokeStyle>("solid");
+  const [fillShapes, setFillShapes] = useState(false);
   const [dark, setDark] = useState(false);
   const [connected, setConnected] = useState(false);
 
@@ -138,13 +139,13 @@ export default function Whiteboard() {
 
   /* ================= POINTER ================= */
 
-  const pos = (x: number, y: number) => {
+  const pos = (x: number, y: number): [number, number] => {
     const c = canvasRef.current!;
     const r = c.getBoundingClientRect();
-    return {
-      x: (x - r.left) * (c.width / r.width),
-      y: (y - r.top) * (c.height / r.height),
-    };
+    return [
+      (x - r.left) * (c.width / r.width),
+      (y - r.top) * (c.height / r.height),
+    ];
   };
 
   const pointerDown = (x: number, y: number) => {
@@ -199,11 +200,57 @@ export default function Whiteboard() {
       const data: DrawEvent = { prevX: shapeStart.current.x, prevY: shapeStart.current.y, x, y, color, width, tool, opacity, strokeStyle: style };
       draw(data);
       socket.current?.emit("draw-event", data);
+      
+      // Save state for undo
+      const currentState = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+      undo.current.push(currentState);
+      if (undo.current.length > UNDO_LIMIT) {
+        undo.current.shift();
+      }
+      redo.current = [];
+    } else if (tool !== "text") {
+      // Save state for non-shape tools too
+      const currentState = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+      undo.current.push(currentState);
+      if (undo.current.length > UNDO_LIMIT) {
+        undo.current.shift();
+      }
+      redo.current = [];
     }
 
     shapeStart.current = null;
     snapshot.current = null;
   };
+
+  /* ================= UNDO/REDO ================= */
+
+  const handleUndo = useCallback(() => {
+    if (undo.current.length === 0) return;
+
+    const currentState = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+    redo.current.push(currentState);
+
+    const previousState = undo.current.pop()!;
+    ctxRef.current!.putImageData(previousState, 0, 0);
+
+    socket.current?.emit("canvas-state", {
+      imageData: previousState,
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (redo.current.length === 0) return;
+
+    const currentState = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+    undo.current.push(currentState);
+
+    const nextState = redo.current.pop()!;
+    ctxRef.current!.putImageData(nextState, 0, 0);
+
+    socket.current?.emit("canvas-state", {
+      imageData: nextState,
+    });
+  }, []);
 
   /* ================= SOCKET ================= */
 
@@ -246,9 +293,10 @@ export default function Whiteboard() {
       <canvas
         ref={canvasRef}
         className="absolute inset-0 cursor-crosshair touch-none"
-        onMouseDown={(e) => pointerDown(...Object.values(pos(e.clientX, e.clientY)))}
-        onMouseMove={(e) => pointerMove(...Object.values(pos(e.clientX, e.clientY)))}
-        onMouseUp={(e) => pointerUp(...Object.values(pos(e.clientX, e.clientY)))}
+        onMouseDown={(e) => { const [x, y] = pos(e.clientX, e.clientY); pointerDown(x, y); }}
+        onMouseMove={(e) => { const [x, y] = pos(e.clientX, e.clientY); pointerMove(x, y); }}
+        onMouseUp={(e) => { const [x, y] = pos(e.clientX, e.clientY); pointerUp(x, y); }}
+        onMouseLeave={() => { drawing.current = false; shapeStart.current = null; snapshot.current = null; }}
       />
 
       <ActiveUsersPanel users={users} myId={myId} darkMode={dark} />
@@ -273,13 +321,15 @@ export default function Whiteboard() {
         strokeWidth={width}
         opacity={opacity}
         strokeStyle={style}
+        fillShapes={fillShapes}
+        onFillToggle={() => setFillShapes((f) => !f)}
         onToolChange={setTool}
         onColorChange={setColor}
         onStrokeWidthChange={setWidth}
         onOpacityChange={setOpacity}
         onStrokeStyleChange={setStyle}
-        onUndo={() => {}}
-        onRedo={() => {}}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onExportPNG={() => {
           const a = document.createElement("a");
           a.href = canvasRef.current!.toDataURL();
@@ -288,6 +338,8 @@ export default function Whiteboard() {
         }}
         onClear={() => {
           ctxRef.current?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+          undo.current = [];
+          redo.current = [];
           socket.current?.emit("clear-board");
         }}
         canUndo={undo.current.length > 0}

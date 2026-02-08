@@ -7,8 +7,15 @@ export type Tool =
   | 'line'
   | 'arrow'
   | 'text'
+  | 'hand'
 
 export type StrokeStyle = 'solid' | 'dashed'
+
+export type BrushSize = 'xs' | 's' | 'm' | 'l' | 'xl'
+
+export type GridType = 'none' | 'dots' | 'lines' | 'grid'
+
+export type GridSize = 10 | 20 | 50
 
 export interface DrawEvent {
   x: number
@@ -28,5 +35,14 @@ export interface CursorEvent {
   y: number
   userId: string
   color: string
+}
+
+export interface ToolbarFeatures {
+  recentColors: string[]
+  brushSize: BrushSize
+  fillShapes: boolean
+  gridType: GridType
+  gridSize: GridSize
+  gridSnap: boolean
 }
 

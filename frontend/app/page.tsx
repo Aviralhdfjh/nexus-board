@@ -1,12 +1,8 @@
 'use client'
 
-import Whiteboard from '@/components/Whiteboard'
+import Page from './landing'
 
 export default function Home() {
-  return (
-    <main className="h-screen w-screen overflow-hidden bg-gray-50">
-      <Whiteboard />
-    </main>
-  )
+  return <Page />
 }
 
