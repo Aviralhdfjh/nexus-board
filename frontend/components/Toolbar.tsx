@@ -11,7 +11,6 @@ import {
   Type,
   Palette,
   Trash2,
-  Wifi,
   WifiOff,
   Undo2,
   Redo2,
@@ -46,6 +45,19 @@ interface ToolbarProps {
   onToggleDark: () => void;
 }
 
+/* ================= CONFIG ================= */
+
+const TOOLS: { id: Tool; icon: any; label: string }[] = [
+  { id: "pencil", icon: Pencil, label: "Pencil (P)" },
+  { id: "highlighter", icon: Highlighter, label: "Highlighter" },
+  { id: "eraser", icon: Eraser, label: "Eraser (E)" },
+  { id: "line", icon: Minus, label: "Line" },
+  { id: "arrow", icon: ArrowRight, label: "Arrow" },
+  { id: "rectangle", icon: Square, label: "Rectangle (R)" },
+  { id: "circle", icon: Circle, label: "Circle (C)" },
+  { id: "text", icon: Type, label: "Text (Coming soon)" },
+];
+
 /* ================= COMPONENT ================= */
 
 export default function Toolbar({
@@ -69,109 +81,87 @@ export default function Toolbar({
   darkMode,
   onToggleDark,
 }: ToolbarProps) {
-  const colorPickerRef = useRef<HTMLInputElement>(null);
+  const colorRef = useRef<HTMLInputElement>(null);
 
-  const tools: { id: Tool; icon: any; label: string }[] = [
-    { id: "pencil", icon: Pencil, label: "Pencil (P)" },
-    { id: "highlighter", icon: Highlighter, label: "Highlighter" },
-    { id: "eraser", icon: Eraser, label: "Eraser (E)" },
-    { id: "line", icon: Minus, label: "Line" },
-    { id: "arrow", icon: ArrowRight, label: "Arrow" },
-    { id: "rectangle", icon: Square, label: "Rectangle (R)" },
-    { id: "circle", icon: Circle, label: "Circle (C)" },
-    { id: "text", icon: Type, label: "Text (Coming soon)" },
-  ];
+  const baseBg = darkMode
+    ? "bg-neutral-900/90 border-white/10 text-neutral-100"
+    : "bg-white/90 border-gray-200 text-gray-800";
+
+  const hoverBg = darkMode ? "hover:bg-white/10" : "hover:bg-gray-100";
+
+  const activeBg = "bg-blue-500 text-white shadow-md shadow-blue-500/30";
 
   const handleClear = () => {
     if (confirm("Clear the board for everyone?")) onClear();
   };
 
-  /* ================= UI ================= */
-
   return (
-    <div className="pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2">
+    <div className="pointer-events-none absolute left-4 top-1/2 z-50 -translate-y-1/2">
       <div
         className={`
-          pointer-events-auto flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 shadow-xl
-          backdrop-blur-md transition-colors
-          ${darkMode
-            ? "border-neutral-700 bg-neutral-900/80 text-neutral-100"
-            : "border-gray-200 bg-white/80 text-gray-800"}
+          pointer-events-auto flex flex-col items-center gap-3
+          rounded-2xl border px-3 py-4 shadow-2xl backdrop-blur-xl
+          transition-colors ${baseBg}
         `}
       >
         {/* Connection */}
-        <div
-          title={isConnected ? "Connected" : "Disconnected"}
-          className="flex items-center px-1"
-        >
-          {isConnected ? (
-            <Wifi className="h-4 w-4 text-green-500" />
-          ) : (
-            <WifiOff className="h-4 w-4 text-red-500" />
-          )}
-        </div>
+        {!isConnected && (
+          <WifiOff className="h-4 w-4 text-rose-500" title="Disconnected" />
+        )}
 
         <Divider dark={darkMode} />
 
         {/* Tools */}
-        {tools.map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            type="button"
-            title={label}
-            onClick={() => onToolChange(id)}
-            className={`
-              rounded-lg p-2 transition-all
-              ${
-                currentTool === id
-                  ? darkMode
-                    ? "bg-blue-600 text-white shadow"
-                    : "bg-blue-500 text-white shadow"
-                  : darkMode
-                  ? "hover:bg-neutral-700"
-                  : "hover:bg-gray-100"
-              }
-            `}
-          >
-            <Icon className="h-5 w-5" />
-          </button>
-        ))}
+        <div className="grid grid-cols-2 gap-2">
+          {TOOLS.map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              title={label}
+              onClick={() => onToolChange(id)}
+              className={`
+                rounded-xl p-3 transition-all
+                ${
+                  currentTool === id
+                    ? activeBg
+                    : `${hoverBg} active:scale-95`
+                }
+              `}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
 
         <Divider dark={darkMode} />
 
         {/* Color Picker */}
         <input
-          ref={colorPickerRef}
+          ref={colorRef}
           type="color"
           value={color}
           onChange={(e) => onColorChange(e.target.value)}
           className="hidden"
         />
-        <button
-          type="button"
+        <IconButton
+          icon={Palette}
           title="Pick color"
-          onClick={() => colorPickerRef.current?.click()}
-          className={`rounded-lg p-2 transition-colors ${
-            darkMode ? "hover:bg-neutral-700" : "hover:bg-gray-100"
-          }`}
-        >
-          <Palette className="h-5 w-5" style={{ color }} />
-        </button>
+          onClick={() => colorRef.current?.click()}
+          style={{ color }}
+          dark={darkMode}
+        />
 
         <Divider dark={darkMode} />
 
-        {/* Stroke Width */}
-        <RangeControl
+        {/* Sliders */}
+        <VerticalSlider
           label="W"
           value={strokeWidth}
           min={1}
           max={30}
-          onChange={(v) => onStrokeWidthChange(v)}
+          onChange={onStrokeWidthChange}
           dark={darkMode}
         />
-
-        {/* Opacity */}
-        <RangeControl
+        <VerticalSlider
           label="Op"
           value={Math.round(opacity * 100)}
           min={0}
@@ -181,75 +171,46 @@ export default function Toolbar({
           dark={darkMode}
         />
 
-        {/* Stroke Style */}
+        {/* Stroke style */}
         <div
-          className={`flex items-center rounded-lg border p-0.5 ${
-            darkMode ? "border-neutral-700" : "border-gray-200"
+          className={`flex gap-1 rounded-lg border p-1 ${
+            darkMode ? "border-white/15" : "border-gray-200"
           }`}
         >
-          {(["solid", "dashed"] as StrokeStyle[]).map((style) => (
+          {(["solid", "dashed"] as StrokeStyle[]).map((s) => (
             <button
-              key={style}
-              title={style}
-              onClick={() => onStrokeStyleChange(style)}
+              key={s}
+              onClick={() => onStrokeStyleChange(s)}
               className={`rounded px-2 py-1 text-xs transition ${
-                strokeStyle === style
+                strokeStyle === s
                   ? darkMode
-                    ? "bg-neutral-700 font-medium"
-                    : "bg-gray-200 font-medium"
-                  : darkMode
-                  ? "hover:bg-neutral-800"
-                  : "hover:bg-gray-100"
+                    ? "bg-white/20"
+                    : "bg-gray-200"
+                  : hoverBg
               }`}
             >
-              {style === "solid" ? "—" : "- -"}
+              {s === "solid" ? "—" : "--"}
             </button>
           ))}
         </div>
 
         <Divider dark={darkMode} />
 
-        {/* Undo / Redo */}
-        <IconButton
-          icon={Undo2}
-          title="Undo (Ctrl+Z)"
-          onClick={onUndo}
-          disabled={!canUndo}
-          dark={darkMode}
-        />
-        <IconButton
-          icon={Redo2}
-          title="Redo (Ctrl+Y)"
-          onClick={onRedo}
-          disabled={!canRedo}
-          dark={darkMode}
-        />
+        {/* Actions */}
+        <IconButton icon={Undo2} title="Undo" onClick={onUndo} disabled={!canUndo} dark={darkMode} />
+        <IconButton icon={Redo2} title="Redo" onClick={onRedo} disabled={!canRedo} dark={darkMode} />
 
         <Divider dark={darkMode} />
 
-        {/* Export */}
-        <IconButton
-          icon={Download}
-          title="Export as PNG"
-          onClick={onExportPNG}
-          dark={darkMode}
-        />
-
-        {/* Clear */}
-        <IconButton
-          icon={Trash2}
-          title="Clear board"
-          onClick={handleClear}
-          danger
-          dark={darkMode}
-        />
+        <IconButton icon={Download} title="Export PNG" onClick={onExportPNG} dark={darkMode} />
+        <IconButton icon={Trash2} title="Clear board" onClick={handleClear} danger dark={darkMode} />
 
         <Divider dark={darkMode} />
 
-        {/* Dark Mode Toggle */}
+        {/* Dark mode */}
         <IconButton
           icon={darkMode ? Sun : Moon}
-          title="Toggle dark mode"
+          title="Toggle theme"
           onClick={onToggleDark}
           dark={darkMode}
         />
@@ -258,14 +219,10 @@ export default function Toolbar({
   );
 }
 
-/* ================= SMALL COMPONENTS ================= */
+/* ================= HELPERS ================= */
 
 function Divider({ dark }: { dark: boolean }) {
-  return (
-    <div
-      className={`h-6 w-px ${dark ? "bg-neutral-700" : "bg-gray-300"}`}
-    />
-  );
+  return <div className={`h-px w-10 ${dark ? "bg-white/15" : "bg-gray-200"}`} />;
 }
 
 function IconButton({
@@ -275,6 +232,7 @@ function IconButton({
   disabled,
   danger,
   dark,
+  style,
 }: {
   icon: any;
   onClick: () => void;
@@ -282,32 +240,33 @@ function IconButton({
   disabled?: boolean;
   danger?: boolean;
   dark: boolean;
+  style?: React.CSSProperties;
 }) {
   return (
     <button
-      type="button"
       title={title}
       onClick={onClick}
       disabled={disabled}
+      style={style}
       className={`
-        rounded-lg p-2 transition
+        rounded-xl p-3 transition-all
         ${
           disabled
-            ? "cursor-not-allowed opacity-40"
+            ? "opacity-40 cursor-not-allowed"
             : danger
-            ? "text-red-500 hover:bg-red-500/10"
+            ? "text-rose-500 hover:bg-rose-500/15"
             : dark
-            ? "hover:bg-neutral-700"
+            ? "hover:bg-white/10"
             : "hover:bg-gray-100"
         }
       `}
     >
-      <Icon className="h-5 w-5" />
+      <Icon className="h-4 w-4" />
     </button>
   );
 }
 
-function RangeControl({
+function VerticalSlider({
   label,
   value,
   min,
@@ -325,9 +284,10 @@ function RangeControl({
   dark: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1 px-1">
-      <span className={`text-xs ${dark ? "text-neutral-400" : "text-gray-600"}`}>
-        {label}
+    <div className="flex flex-col items-center gap-1">
+      <span className={`text-[10px] tabular-nums ${dark ? "text-neutral-400" : "text-gray-500"}`}>
+        {label} {value}
+        {suffix}
       </span>
       <input
         type="range"
@@ -335,16 +295,17 @@ function RangeControl({
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-16"
+        className={`
+          h-1 w-12 appearance-none rounded-full cursor-pointer
+          ${dark ? "bg-white/20" : "bg-gray-200"}
+          [&::-webkit-slider-thumb]:h-3
+          [&::-webkit-slider-thumb]:w-3
+          [&::-webkit-slider-thumb]:rounded-full
+          [&::-webkit-slider-thumb]:appearance-none
+          [&::-webkit-slider-thumb]:shadow
+          ${dark ? "[&::-webkit-slider-thumb]:bg-white" : "[&::-webkit-slider-thumb]:bg-gray-700"}
+        `}
       />
-      <span
-        className={`w-8 text-xs text-right ${
-          dark ? "text-neutral-400" : "text-gray-600"
-        }`}
-      >
-        {value}
-        {suffix}
-      </span>
     </div>
   );
 }

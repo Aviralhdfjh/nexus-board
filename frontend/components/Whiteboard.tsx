@@ -1,36 +1,32 @@
 "use client";
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import Toolbar from "@/components/Toolbar";
 import ActiveUsersPanel from "@/components/ActiveUsersPanel";
-import ChatPanel, { type ChatMessage } from "@/components/ChatPanel";
+import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import type { Tool, StrokeStyle } from "@/types";
 
-/* ================= CONSTANTS ================= */
+/* ================= CONFIG ================= */
 
 const SHAPE_TOOLS: Tool[] = ["rectangle", "circle", "line", "arrow"];
 const UNDO_LIMIT = 30;
 const CHAT_MAX = 200;
+const CURSOR_TTL = 1500;
 
 /* ================= TYPES ================= */
 
 type DrawEvent = {
-  x: number;
-  y: number;
   prevX: number;
   prevY: number;
+  x: number;
+  y: number;
   color: string;
   width: number;
   tool: Tool;
   opacity?: number;
   strokeStyle?: StrokeStyle;
+  text?: string;
 };
 
 type RemoteCursor = {
@@ -46,112 +42,56 @@ type RemoteCursor = {
 export default function Whiteboard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const socketRef = useSocket();
+  const socket = useSocket();
 
   /* -------- UI State -------- */
-  const [currentTool, setCurrentTool] = useState<Tool>("pencil");
+  const [tool, setTool] = useState<Tool>("pencil");
   const [color, setColor] = useState("#3b82f6");
-  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [width, setWidth] = useState(2);
   const [opacity, setOpacity] = useState(1);
-  const [strokeStyle, setStrokeStyle] = useState<StrokeStyle>("solid");
-  const [isConnected, setIsConnected] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-
-  /* -------- Drawing Internals -------- */
-  const drawingRef = useRef(false);
-  const prevPos = useRef({ x: 0, y: 0 });
-  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const snapshotRef = useRef<ImageData | null>(null);
-  const hasDrawnRef = useRef(false);
-
-  /* -------- Undo / Redo -------- */
-  const undoStack = useRef<ImageData[]>([]);
-  const redoStack = useRef<ImageData[]>([]);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
+  const [style, setStyle] = useState<StrokeStyle>("solid");
+  const [dark, setDark] = useState(false);
+  const [connected, setConnected] = useState(false);
 
   /* -------- Presence -------- */
-  const [activeUsers, setActiveUsers] = useState<
-    Record<string, { username: string; color: string }>
-  >({});
+  const [users, setUsers] = useState<Record<string, { username: string; color: string }>>({});
   const [myId, setMyId] = useState<string | null>(null);
 
-  /* -------- Remote Cursors -------- */
-  const [remoteCursors, setRemoteCursors] = useState<
-    Record<string, RemoteCursor>
-  >({});
-  const lastCursorEmit = useRef(0);
-
   /* -------- Chat -------- */
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
 
-  /* ================= DARK MODE ================= */
+  /* -------- Drawing Engine -------- */
+  const drawing = useRef(false);
+  const prev = useRef({ x: 0, y: 0 });
+  const shapeStart = useRef<{ x: number; y: number } | null>(null);
+  const snapshot = useRef<ImageData | null>(null);
+  const undo = useRef<ImageData[]>([]);
+  const redo = useRef<ImageData[]>([]);
+  const bg = useRef("#f0f2f5");
+
+  /* -------- Cursors -------- */
+  const [cursors, setCursors] = useState<Record<string, RemoteCursor>>({});
+  const cursorRAF = useRef<number | null>(null);
+
+  /* ================= THEME ================= */
 
   useEffect(() => {
     const saved = localStorage.getItem("nexus-dark");
-    if (saved) setDarkMode(saved === "true");
-    else setDarkMode(window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const prefers = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDark(saved ? saved === "true" : prefers);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("nexus-dark", String(darkMode));
-    document.documentElement.classList.toggle("dark", darkMode);
-  }, [darkMode]);
-
-  /* ================= SOCKET STATUS ================= */
-
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket) return;
-
-    const onConnect = () => {
-      setIsConnected(true);
-      setMyId(socket.id ?? null);
-    };
-    const onDisconnect = () => {
-      setIsConnected(false);
-      setMyId(null);
-    };
-
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    if (socket.connected) onConnect();
-
-    return () => {
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-    };
-  }, [socketRef]);
-
-  /* ================= USERNAME INIT ================= */
-
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket) return;
-
-    let name = localStorage.getItem("nexus-username");
-    if (!name) {
-      name = prompt("Enter your name") || "Anonymous";
-      localStorage.setItem("nexus-username", name);
-    }
-
-    const send = () => socket.emit("set-username", name);
-    send();
-    socket.on("connect", send);
-
-    return () => {
-      socket.off("connect", send);
-    };
-  }, [socketRef]);
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("nexus-dark", String(dark));
+    bg.current = dark ? "#0a0a0a" : "#f0f2f5";
+  }, [dark]);
 
   /* ================= CANVAS INIT ================= */
 
   useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.lineCap = "round";
@@ -159,19 +99,22 @@ export default function Whiteboard() {
     ctxRef.current = ctx;
   }, []);
 
-  /* ================= DRAW CORE ================= */
+  /* ================= DRAW ================= */
 
-  const drawLine = useCallback((d: DrawEvent) => {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
+  const draw = useCallback((d: DrawEvent) => {
+    const ctx = ctxRef.current!;
+    ctx.save();
 
-    ctx.globalCompositeOperation =
-      d.tool === "eraser" ? "destination-out" : "source-over";
-
-    ctx.strokeStyle = d.tool === "eraser" ? "#000" : d.color;
-    ctx.globalAlpha = d.opacity ?? 1;
-    ctx.lineWidth = d.width;
-    ctx.setLineDash(d.strokeStyle === "dashed" ? [8, 6] : []);
+    if (d.tool === "eraser") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = bg.current;
+      ctx.lineWidth = Math.max(d.width, 16);
+    } else {
+      ctx.strokeStyle = d.color;
+      ctx.globalAlpha = d.opacity ?? 1;
+      ctx.lineWidth = d.width;
+      ctx.setLineDash(d.strokeStyle === "dashed" ? [8, 6] : []);
+    }
 
     if (d.tool === "rectangle") {
       ctx.strokeRect(d.prevX, d.prevY, d.x - d.prevX, d.y - d.prevY);
@@ -179,6 +122,10 @@ export default function Whiteboard() {
       ctx.beginPath();
       ctx.arc(d.prevX, d.prevY, Math.hypot(d.x - d.prevX, d.y - d.prevY), 0, Math.PI * 2);
       ctx.stroke();
+    } else if (d.tool === "text" && d.text) {
+      ctx.font = `${Math.max(14, d.width * 8)}px system-ui`;
+      ctx.fillStyle = d.color;
+      ctx.fillText(d.text, d.prevX, d.prevY);
     } else {
       ctx.beginPath();
       ctx.moveTo(d.prevX, d.prevY);
@@ -186,209 +133,151 @@ export default function Whiteboard() {
       ctx.stroke();
     }
 
-    ctx.globalAlpha = 1;
-    ctx.setLineDash([]);
-    ctx.globalCompositeOperation = "source-over";
+    ctx.restore();
   }, []);
 
-  /* ================= HELPERS ================= */
+  /* ================= POINTER ================= */
 
-  const getPos = (clientX: number, clientY: number) => {
+  const pos = (x: number, y: number) => {
     const c = canvasRef.current!;
     const r = c.getBoundingClientRect();
     return {
-      x: (clientX - r.left) * (c.width / r.width),
-      y: (clientY - r.top) * (c.height / r.height),
+      x: (x - r.left) * (c.width / r.width),
+      y: (y - r.top) * (c.height / r.height),
     };
   };
 
-  const emitCursor = (x: number, y: number) => {
-    const now = Date.now();
-    if (now - lastCursorEmit.current > 16) {
-      socketRef.current?.emit("cursor-move", { x, y });
-      lastCursorEmit.current = now;
+  const pointerDown = (x: number, y: number) => {
+    prev.current = { x, y };
+    drawing.current = true;
+
+    if (tool === "text") {
+      const text = prompt("Enter text");
+      if (!text) return;
+      snapshot.current = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+      const data: DrawEvent = { prevX: x, prevY: y, x, y, color, width, tool: "text", text };
+      draw(data);
+      socket.current?.emit("draw-event", data);
+      return;
+    }
+
+    if (SHAPE_TOOLS.includes(tool)) {
+      shapeStart.current = { x, y };
+      snapshot.current = ctxRef.current!.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
     }
   };
 
-  /* ================= MOUSE EVENTS ================= */
+  const pointerMove = (x: number, y: number) => {
+    if (!drawing.current) return;
 
-  const handleDown = (x: number, y: number) => {
-    prevPos.current = { x, y };
-    drawingRef.current = true;
-    hasDrawnRef.current = false;
-
-    if (SHAPE_TOOLS.includes(currentTool)) {
-      shapeStartRef.current = { x, y };
-      snapshotRef.current = ctxRef.current!.getImageData(
-        0,
-        0,
-        canvasRef.current!.width,
-        canvasRef.current!.height
-      );
-    }
-  };
-
-  const handleMove = (x: number, y: number) => {
-    emitCursor(x, y);
-    if (!drawingRef.current) return;
-
-    if (!hasDrawnRef.current) {
-      undoStack.current.push(
-        ctxRef.current!.getImageData(
-          0,
-          0,
-          canvasRef.current!.width,
-          canvasRef.current!.height
-        )
-      );
-      if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift();
-      redoStack.current = [];
-      setCanUndo(true);
-      setCanRedo(false);
-      hasDrawnRef.current = true;
-    }
-
-    if (!SHAPE_TOOLS.includes(currentTool)) {
+    if (!SHAPE_TOOLS.includes(tool)) {
       const data: DrawEvent = {
-        prevX: prevPos.current.x,
-        prevY: prevPos.current.y,
+        prevX: prev.current.x,
+        prevY: prev.current.y,
         x,
         y,
         color,
-        width: strokeWidth,
-        tool: currentTool,
+        width,
+        tool,
         opacity,
-        strokeStyle,
+        strokeStyle: style,
       };
-      drawLine(data);
-      socketRef.current?.emit("draw-event", data);
-      prevPos.current = { x, y };
+      draw(data);
+      socket.current?.emit("draw-event", data);
+      prev.current = { x, y };
+    } else if (snapshot.current && shapeStart.current) {
+      ctxRef.current!.putImageData(snapshot.current, 0, 0);
+      draw({ prevX: shapeStart.current.x, prevY: shapeStart.current.y, x, y, color, width, tool, opacity, strokeStyle: style });
     }
   };
 
-  const handleUp = (x: number, y: number) => {
-    if (!drawingRef.current) return;
-    drawingRef.current = false;
+  const pointerUp = (x: number, y: number) => {
+    if (!drawing.current) return;
+    drawing.current = false;
 
-    if (shapeStartRef.current) {
-      const s = shapeStartRef.current;
-      const data: DrawEvent = {
-        prevX: s.x,
-        prevY: s.y,
-        x,
-        y,
-        color,
-        width: strokeWidth,
-        tool: currentTool,
-        opacity,
-        strokeStyle,
-      };
-      drawLine(data);
-      socketRef.current?.emit("draw-event", data);
+    if (shapeStart.current) {
+      const data: DrawEvent = { prevX: shapeStart.current.x, prevY: shapeStart.current.y, x, y, color, width, tool, opacity, strokeStyle: style };
+      draw(data);
+      socket.current?.emit("draw-event", data);
     }
 
-    shapeStartRef.current = null;
-    snapshotRef.current = null;
+    shapeStart.current = null;
+    snapshot.current = null;
   };
 
-  /* ================= SOCKET EVENTS ================= */
+  /* ================= SOCKET ================= */
 
   useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket) return;
+    const s = socket.current;
+    if (!s) return;
 
-    socket.on("draw-event", drawLine);
-    socket.on("cursor-move", (d) =>
-      setRemoteCursors((p) => ({
-        ...p,
-        [d.id]: {
-          x: d.x,
-          y: d.y,
-          color: d.color,
-          username: d.username,
-          lastSeen: Date.now(),
-        },
-      }))
-    );
-    socket.on("cursor-remove", (id) =>
-      setRemoteCursors((p) => {
-        const n = { ...p };
-        delete n[id];
-        return n;
-      })
-    );
-    socket.on("presence", (d) => {
-      const map: typeof activeUsers = {};
-      d.users.forEach((u: any) => (map[u.id] = { username: u.username, color: u.color }));
-      setActiveUsers(map);
+    s.on("connect", () => {
+      setConnected(true);
+      setMyId(s.id ?? null);
     });
-    socket.on("user-left", ({ id }) =>
-      setActiveUsers((p) => {
-        const n = { ...p };
-        delete n[id];
-        return n;
-      })
+    s.on("disconnect", () => setConnected(false));
+    s.on("draw-event", (d: DrawEvent) => requestAnimationFrame(() => draw(d)));
+    s.on("cursor-move", (d) =>
+      setCursors((p) => ({ ...p, [d.id]: { ...d, lastSeen: Date.now() } }))
     );
-    socket.on("chat-message", (m: ChatMessage) =>
-      setChatMessages((p) => [...p.slice(-CHAT_MAX + 1), m])
+    s.on("cursor-remove", (id) => setCursors((p) => { const n = { ...p }; delete n[id]; return n; }));
+    s.on("presence", (d) => {
+      const map: typeof users = {};
+      d.users.forEach((u: any) => (map[u.id] = { username: u.username, color: u.color }));
+      setUsers(map);
+    });
+    s.on("chat-message", (m: ChatMessage) =>
+      setChat((p) => [...p.slice(-CHAT_MAX + 1), m])
     );
 
     return () => {
-      socket.removeAllListeners();
+      s.off("draw-event");
+      s.off("cursor-move");
+      s.off("cursor-remove");
+      s.off("presence");
+      s.off("chat-message");
     };
-  }, [drawLine, socketRef]);
+  }, [draw, socket]);
 
   /* ================= RENDER ================= */
 
   return (
-    <div className={`relative h-full w-full ${darkMode ? "bg-neutral-900" : "bg-gray-50"}`}>
+    <div className={`relative h-full w-full ${dark ? "bg-neutral-950" : "bg-[#f0f2f5]"}`}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 cursor-crosshair touch-none"
-        onMouseDown={(e) => {
-          const pos = getPos(e.clientX, e.clientY);
-          handleDown(pos.x, pos.y);
-        }}
-        onMouseMove={(e) => {
-          const pos = getPos(e.clientX, e.clientY);
-          handleMove(pos.x, pos.y);
-        }}
-        onMouseUp={(e) => {
-          const pos = getPos(e.clientX, e.clientY);
-          handleUp(pos.x, pos.y);
-        }}
+        onMouseDown={(e) => pointerDown(...Object.values(pos(e.clientX, e.clientY)))}
+        onMouseMove={(e) => pointerMove(...Object.values(pos(e.clientX, e.clientY)))}
+        onMouseUp={(e) => pointerUp(...Object.values(pos(e.clientX, e.clientY)))}
       />
 
-      <ActiveUsersPanel users={activeUsers} myId={myId} />
-      <ChatPanel messages={chatMessages} onSend={(t) => socketRef.current?.emit("chat-message", t)} myId={myId} />
+      <ActiveUsersPanel users={users} myId={myId} darkMode={dark} />
+      <ChatPanel messages={chat} onSend={(t) => socket.current?.emit("chat-message", t)} myId={myId} darkMode={dark} />
 
-      {Object.entries(remoteCursors).map(
-        ([id, c]) =>
-          Date.now() - c.lastSeen < 1500 && (
-            <div
-              key={id}
-              className="pointer-events-none absolute z-40"
-              style={{ transform: `translate(${c.x}px, ${c.y}px)` }}
-            >
-              <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-              <span className="ml-1 rounded px-1 text-[10px] text-white" style={{ backgroundColor: c.color }}>
+      {Object.entries(cursors).map(([id, c]) =>
+        Date.now() - c.lastSeen < CURSOR_TTL && (
+          <div key={id} className="pointer-events-none absolute z-40" style={{ transform: `translate(${c.x}px, ${c.y}px)` }}>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: c.color }} />
+              <span className="rounded px-2 py-0.5 text-xs text-white" style={{ backgroundColor: c.color }}>
                 {c.username}
               </span>
             </div>
-          )
+          </div>
+        )
       )}
 
       <Toolbar
-        currentTool={currentTool}
+        currentTool={tool}
         color={color}
-        strokeWidth={strokeWidth}
+        strokeWidth={width}
         opacity={opacity}
-        strokeStyle={strokeStyle}
-        onToolChange={setCurrentTool}
+        strokeStyle={style}
+        onToolChange={setTool}
         onColorChange={setColor}
-        onStrokeWidthChange={setStrokeWidth}
+        onStrokeWidthChange={setWidth}
         onOpacityChange={setOpacity}
-        onStrokeStyleChange={setStrokeStyle}
+        onStrokeStyleChange={setStyle}
         onUndo={() => {}}
         onRedo={() => {}}
         onExportPNG={() => {
@@ -397,12 +286,15 @@ export default function Whiteboard() {
           a.download = "nexus-board.png";
           a.click();
         }}
-        onClear={() => socketRef.current?.emit("clear-board")}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        isConnected={isConnected}
-        darkMode={darkMode}
-        onToggleDark={() => setDarkMode((d) => !d)}
+        onClear={() => {
+          ctxRef.current?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+          socket.current?.emit("clear-board");
+        }}
+        canUndo={undo.current.length > 0}
+        canRedo={redo.current.length > 0}
+        isConnected={connected}
+        darkMode={dark}
+        onToggleDark={() => setDark((d) => !d)}
       />
     </div>
   );
