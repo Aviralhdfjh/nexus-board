@@ -1,5 +1,10 @@
 # Deploy Nexus-Board
 
+> **"No Next.js version detected" on Vercel?**  
+> Set **Root Directory** to **`frontend`**: Vercel → Project → **Settings** → **General** → **Root Directory** → **Edit** → enter `frontend` → **Save**. Then redeploy. The Next.js app lives in the `frontend` folder, not the repo root.
+
+---
+
 You have **two parts** to deploy:
 
 1. **Frontend (Next.js)** → **Vercel** (recommended)
@@ -45,9 +50,9 @@ The frontend needs your backend URL. Deploy the backend and copy its URL before 
 
 1. Go to [vercel.com](https://vercel.com) and sign in (e.g. with GitHub).
 2. **Add New** → **Project** and import your repository.
-3. **Configure:**
-   - **Root Directory**: click **Edit** and set to **`frontend`** (so Vercel builds the Next.js app).
-   - **Framework Preset**: Next.js (auto-detected).
+3. **Configure (required):**
+   - **Root Directory**: click **Edit**, set to **`frontend`**, then **Save**. If you leave this as the repo root, you will get "No Next.js version detected" because the root `package.json` does not contain Next.js.
+   - **Framework Preset**: Next.js (should auto-detect after Root Directory is set to `frontend`).
    - **Build Command**: `npm run build` (default).
    - **Output Directory**: leave default.
 4. **Environment Variables** (add before first deploy):

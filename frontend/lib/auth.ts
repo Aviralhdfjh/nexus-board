@@ -17,6 +17,6 @@ export async function requireBoardAccess(
     include: { board: true },
   });
   if (!member) throw new Error("Forbidden");
-  if (roles && !roles.includes(member.role)) throw new Error("Forbidden");
+  if (roles && !roles.includes(member.role as "OWNER" | "EDITOR" | "VIEWER")) throw new Error("Forbidden");
   return { user, member, board: member.board };
 }
