@@ -23,6 +23,8 @@ The frontend needs your backend URL. Deploy the backend and copy its URL before 
 3. If you use “Empty project”:
    - Add a **GitHub repo** that contains your project (with a `backend` folder).
    - In **Settings**, set **Root Directory** to `backend`.
+   - **Always set Root Directory to `backend`** for this repo; otherwise you may get "Error creating build plan with Railpack."
+   - The repo includes **`backend/Dockerfile`** so Railway can build without relying on Railpack detection.
 4. Add **Environment variable**:
    - `CLIENT_URL` = your Vercel frontend URL (you can set this after Step 2, then redeploy), e.g. `https://your-app.vercel.app`
 5. Railway will run `npm install` and `npm start`. Your backend `package.json` should have:
