@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import crypto from "crypto";
+import { socketAuthMiddleware } from "./socket-auth.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,58 +23,59 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"],
 });
 
+io.use(socketAuthMiddleware);
+
 app.use(cors());
 app.use(express.json());
 
-// socketId -> { username, color }
+// socketId -> { userId, username, color } (userId from JWT)
 const users = new Map();
 
 const getPresenceList = () =>
   Array.from(users.entries()).map(([id, u]) => ({
     id,
+    userId: u.userId,
     username: u.username,
     color: u.color,
   }));
 
 io.on("connection", (socket) => {
+  const user = socket.user;
   const color = `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`;
-
-  users.set(socket.id, { username: "Anonymous", color });
+  users.set(socket.id, {
+    userId: user.id,
+    username: user.name || user.email || "Anonymous",
+    color,
+  });
 
   socket.emit("user-color", { color });
   socket.emit("presence", { users: getPresenceList() });
 
-  /* ---------- USERNAME ---------- */
   socket.on("set-username", (name) => {
     const entry = users.get(socket.id);
     if (!entry) return;
-
-    entry.username = String(name || "Anonymous").slice(0, 50);
-
-    const payload = {
+    entry.username = String(name || entry.username || "Anonymous").slice(0, 50);
+    io.emit("user-updated", {
       id: socket.id,
+      userId: entry.userId,
       username: entry.username,
       color: entry.color,
-    };
-
-    io.emit("user-updated", payload);
-  });
-
-  /* ---------- DRAW ---------- */
-  socket.on("draw-event", (data) => {
-    socket.broadcast.emit("draw-event", {
-      ...data,
-      userId: socket.id,
     });
   });
 
-  /* ---------- CURSOR ---------- */
+  socket.on("draw-event", (data) => {
+    socket.broadcast.emit("draw-event", {
+      ...data,
+      userId: socket.user.id,
+    });
+  });
+
   socket.on("cursor-move", ({ x, y }) => {
     const entry = users.get(socket.id);
     if (!entry) return;
-
     socket.broadcast.emit("cursor-move", {
       id: socket.id,
+      userId: entry.userId,
       x,
       y,
       color: entry.color,
@@ -81,22 +83,19 @@ io.on("connection", (socket) => {
     });
   });
 
-  /* ---------- CLEAR ---------- */
   socket.on("clear-board", () => {
     socket.broadcast.emit("clear-board");
   });
 
-  /* ---------- CHAT ---------- */
   socket.on("chat-message", (text) => {
     const entry = users.get(socket.id);
     if (!entry) return;
-
     const safeText = String(text || "").trim().slice(0, 500);
     if (!safeText) return;
-
     io.emit("chat-message", {
       messageId: crypto.randomUUID(),
-      userId: socket.id,
+      userId: entry.userId,
+      id: socket.id,
       username: entry.username,
       color: entry.color,
       text: safeText,
@@ -104,7 +103,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  /* ---------- DISCONNECT ---------- */
   socket.on("disconnect", () => {
     users.delete(socket.id);
     socket.broadcast.emit("user-left", { id: socket.id });
@@ -114,6 +112,6 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Allowed origins: ${ALLOWED_ORIGINS.join(", ")}`);
+  console.log("🚀 Server running on port", PORT);
+  console.log("🌐 Allowed origins:", ALLOWED_ORIGINS.join(", "));
 });

@@ -1,0 +1,19 @@
+# Start PostgreSQL for Nexus-Board local development.
+# 1. Run from project root:  docker compose up -d
+# 2. In frontend/.env set:   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/nexus_board?schema=public"
+# 3. Run migrations:        cd frontend && npx prisma migrate dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nexus_board
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
