@@ -247,7 +247,7 @@ export default function Page() {
               dark ? 'text-neutral-400' : 'text-slate-600'
             }`}
           >
-            Sketch, diagram, and brainstorm in real time. No account needed to try — just open and draw.
+            Sketch, diagram, and brainstorm in real time. Create a free account to save boards and collaborate with your team.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

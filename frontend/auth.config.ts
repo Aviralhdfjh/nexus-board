@@ -12,9 +12,27 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const path = nextUrl.pathname;
-      if (path.startsWith("/login") || path.startsWith("/register"))
-        return isLoggedIn && path.startsWith("/login") ? Response.redirect(new URL("/", nextUrl)) : true;
-      return isLoggedIn || Response.redirect(new URL("/login", nextUrl));
+      const isAuthPage = path.startsWith("/login") || path.startsWith("/register");
+      const isLanding = path === "/" || path === "/landing";
+      const isBoardArea = path.startsWith("/board") || path.startsWith("/boards");
+
+      // Auth pages: if already logged in, send to boards; otherwise allow.
+      if (isAuthPage) {
+        return isLoggedIn ? Response.redirect(new URL("/boards", nextUrl)) : true;
+      }
+
+      // Landing page is always public.
+      if (isLanding) {
+        return true;
+      }
+
+      // Only board-related pages require authentication.
+      if (isBoardArea) {
+        return isLoggedIn || Response.redirect(new URL("/login", nextUrl));
+      }
+
+      // Any other route is public.
+      return true;
     },
   },
   providers: [],

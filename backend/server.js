@@ -63,6 +63,22 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("set-color", (newColor) => {
+    const entry = users.get(socket.id);
+    if (!entry) return;
+    const safe =
+      typeof newColor === "string"
+        ? String(newColor).slice(0, 32)
+        : entry.color;
+    entry.color = safe;
+    io.emit("user-updated", {
+      id: socket.id,
+      userId: entry.userId,
+      username: entry.username,
+      color: entry.color,
+    });
+  });
+
   socket.on("draw-event", (data) => {
     socket.broadcast.emit("draw-event", {
       ...data,

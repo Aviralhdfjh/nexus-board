@@ -23,11 +23,35 @@ const MAX_MESSAGES = 200;
 export default function ChatPanel({ messages, onSend, myId, darkMode = false }: ChatPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
-    listRef.current?.scrollTo(0, listRef.current.scrollHeight);
+    const el = listRef.current;
+    if (!el) return;
+    if (!stickToBottomRef.current) return;
+    el.scrollTo(0, el.scrollHeight);
   }, [messages]);
+
+  // Track whether user is near bottom (within 50px)
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distanceFromBottom <= 50;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [collapsed]);
+
+  // Focus input when opening chat
+  useEffect(() => {
+    if (collapsed) return;
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [collapsed]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +72,8 @@ export default function ChatPanel({ messages, onSend, myId, darkMode = false }: 
         type="button"
         onClick={() => setCollapsed(false)}
         title="Chat"
+        aria-label="Open chat"
+        aria-pressed={false}
         className={`absolute bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border px-3 py-2 shadow-lg backdrop-blur-xl transition-all hover:scale-105 ${
           darkMode
             ? "border-white/10 bg-neutral-900/90 text-neutral-100 hover:bg-neutral-800/95"
@@ -89,6 +115,8 @@ export default function ChatPanel({ messages, onSend, myId, darkMode = false }: 
           type="button"
           onClick={() => setCollapsed(true)}
           title="Minimize"
+          aria-label="Minimize chat"
+          aria-pressed={true}
           className={`ml-auto rounded-lg p-1.5 transition ${darkMode ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
         >
           <ChevronDown className="h-4 w-4" />
@@ -98,6 +126,7 @@ export default function ChatPanel({ messages, onSend, myId, darkMode = false }: 
       <div
         ref={listRef}
         className="flex max-h-64 min-h-36 flex-col gap-2 overflow-y-auto p-3"
+        aria-label="Chat messages"
       >
         {messages.length === 0 ? (
           <p className={`py-6 text-center text-xs ${darkMode ? "text-neutral-500" : "text-gray-400"}`}>
@@ -137,6 +166,7 @@ export default function ChatPanel({ messages, onSend, myId, darkMode = false }: 
           ref={inputRef}
           type="text"
           placeholder="Type a message..."
+          aria-label="Message input"
           className={`min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-sm outline-none transition placeholder:opacity-70 ${
             darkMode
               ? "border-white/15 bg-white/5 text-white placeholder:text-neutral-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
@@ -147,6 +177,7 @@ export default function ChatPanel({ messages, onSend, myId, darkMode = false }: 
         <button
           type="submit"
           title="Send"
+          aria-label="Send message"
           className="rounded-xl bg-blue-500 p-2.5 text-white shadow-lg shadow-blue-500/25 transition hover:bg-blue-600 active:scale-95"
         >
           <Send className="h-4 w-4" />

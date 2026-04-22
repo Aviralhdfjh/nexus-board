@@ -3,6 +3,17 @@
 import { useState } from "react";
 import { Users, ChevronRight, ChevronLeft } from "lucide-react";
 
+function initialsFromName(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("") || "U"
+  );
+}
+
 export type ActiveUser = {
   username: string;
   color: string;
@@ -16,7 +27,11 @@ interface ActiveUsersPanelProps {
 
 export default function ActiveUsersPanel({ users, myId, darkMode = false }: ActiveUsersPanelProps) {
   const [collapsed, setCollapsed] = useState(true);
-  const list = Object.entries(users);
+  const list = Object.entries(users).sort((a, b) => {
+    if (a[0] === myId) return -1;
+    if (b[0] === myId) return 1;
+    return (a[1]?.username || "").localeCompare(b[1]?.username || "");
+  });
 
   if (collapsed) {
     return (
@@ -24,6 +39,8 @@ export default function ActiveUsersPanel({ users, myId, darkMode = false }: Acti
         type="button"
         onClick={() => setCollapsed(false)}
         title="Collaborators"
+        aria-label="Open collaborators panel"
+        aria-pressed={false}
         className={`absolute top-4 right-4 z-50 flex items-center gap-2 rounded-full border px-3 py-2 shadow-lg backdrop-blur-xl transition-all hover:scale-105 ${
           darkMode
             ? "border-white/10 bg-neutral-900/90 text-neutral-100 hover:bg-neutral-800/95"
@@ -32,13 +49,28 @@ export default function ActiveUsersPanel({ users, myId, darkMode = false }: Acti
       >
         <Users className="h-4 w-4" />
         <span className="text-sm font-medium">Collaborators</span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            darkMode ? "bg-white/15" : "bg-gray-100 text-gray-600"
-          }`}
-        >
-          {list.length}
-        </span>
+        <div className="flex -space-x-2">
+          {list.slice(0, 3).map(([id, u]) => (
+            <span
+              key={id}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-2 ring-white/70"
+              style={{ backgroundColor: u.color }}
+              title={u.username}
+            >
+              {initialsFromName(u.username)}
+            </span>
+          ))}
+        </div>
+        {list.length > 3 && (
+          <span
+            className={`ml-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+              darkMode ? "bg-white/15 text-neutral-300" : "bg-gray-100 text-gray-600"
+            }`}
+            title={`${list.length - 3} more`}
+          >
+            +{list.length - 3}
+          </span>
+        )}
         <ChevronLeft className="h-4 w-4 opacity-60" />
       </button>
     );
@@ -70,6 +102,8 @@ export default function ActiveUsersPanel({ users, myId, darkMode = false }: Acti
           type="button"
           onClick={() => setCollapsed(true)}
           title="Minimize"
+          aria-label="Minimize collaborators panel"
+          aria-pressed={true}
           className={`rounded-lg p-1.5 transition ${darkMode ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
         >
           <ChevronRight className="h-4 w-4" />
